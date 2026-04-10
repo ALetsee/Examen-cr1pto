@@ -14,7 +14,6 @@ try:
 except ImportError:
     VERDE = AMARILLO = ROJO = RESET = NEGRITA = ""
 
-# LECTURA DE TECLAS
 if os.name == 'nt':
     import msvcrt
     def _leer_tecla():
@@ -48,7 +47,6 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         return 'otro'
 
-# MENU
 def _limpiar():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -101,14 +99,19 @@ def menu_interactivo(opciones, titulo=""):
             return len(opciones) - 1
 
 
-# PARAMETROS ESTATICOS  y² = x³ - x + 188  (mod 751)
-PUNTO_INFINITO = None
+# parámetros de la curva: y² = x³ − x + 188 (mod 751)
+# coef_a = 750 equivale a −1 mod 751
+PUNTO_INFINITO = None  # elemento neutro del grupo, hace el papel del cero en la suma de puntos
 P      = 751
-COEF_A = 750   # -1 mod 751
+COEF_A = 750
 COEF_B = 188
 
-# ARITMETICA MODULAR
+
+# aritmética modular
+
 def inverso_modular(numero, primo):
+    # permite calcular pendientes en la suma de puntos: a/b → a * b^-1 mod p
+    # sin inversos modulares != modulo ecc
     if numero == 0:
         raise ZeroDivisionError("El 0 no tiene inverso modular")
     if numero < 0:
@@ -123,8 +126,12 @@ def inverso_modular(numero, primo):
         raise ValueError("Los valores no son coprimos")
     return coef_anterior % primo
 
-# OPERACIONES EN LA CURVA ELIPTICA
+
+# operaciones en la curva elíptica
+
 def sumar_puntos(punto_A, punto_B, coef_a, primo):
+    # define la operación del grupo elíptico, base de toda la criptografía ecc
+    # maneja tres casos: neutro, puntos distintos (adición) y mismo punto (duplicado)
     if punto_A is PUNTO_INFINITO: return punto_B
     if punto_B is PUNTO_INFINITO: return punto_A
     x1, y1 = punto_A
@@ -141,8 +148,10 @@ def sumar_puntos(punto_A, punto_B, coef_a, primo):
     return (x3, y3)
 
 def multiplicar_punto_por_escalar(escalar, punto, coef_a, primo):
+    # operación: d*G, k*G, k*Q 
+    # fácil de calcular hacia adelante, imposible de invertir por el ecdlp
     if escalar % primo == 0 or punto is PUNTO_INFINITO:
-        return PUNTO_INFINITO
+        return PUNTO_INFINITO 
     if escalar < 0:
         return multiplicar_punto_por_escalar(
             -escalar, (punto[0], (-punto[1]) % primo), coef_a, primo
@@ -157,11 +166,17 @@ def multiplicar_punto_por_escalar(escalar, punto, coef_a, primo):
     return acumulado
 
 def negar_punto(punto, primo):
+    # devuelve (x, −y mod p), el inverso aditivo
+    # usado en el descifrado para restar S: C2 − S = C2 + (−S)
     if punto is PUNTO_INFINITO: return PUNTO_INFINITO
     return (punto[0], (-punto[1]) % primo)
 
-# PUNTO GENERADOR G
+
+# punto generador g
+
 def calcular_orden_del_punto(punto, coef_a, primo, limite=2000):
+    # busca el menor n tal que n*G = punto_infinito
+    # garantiza que g genera un subgrupo grande, necesario para mapear ascii sin colisiones
     actual = PUNTO_INFINITO
     for n in range(1, limite + 1):
         actual = sumar_puntos(actual, punto, coef_a, primo)
@@ -170,6 +185,8 @@ def calcular_orden_del_punto(punto, coef_a, primo, limite=2000):
     return None
 
 def buscar_punto_generador(coef_a, coef_b, primo, orden_minimo=300):
+    # recorre la curva y devuelve el primer punto con orden > 300
+    # orden alto = espacio de claves más grande = cifrado más seguro
     for x in range(primo):
         rhs = (x**3 + coef_a * x + coef_b) % primo
         for y in range(primo):
@@ -180,8 +197,12 @@ def buscar_punto_generador(coef_a, coef_b, primo, orden_minimo=300):
                     return candidato, orden
     raise ValueError("No se encontro un punto generador con orden suficiente")
 
-# TABLA ASCII <-> PUNTOS ECC
+
+# tabla ascii a puntos ecc
+
 def construir_tabla_ascii(punto_base, coef_a, primo):
+    # convierte texto en puntos ecc y viceversa: v -> v*G y punto -> carácter
+    # permite cifrar mensajes arbitrarios carácter a carácter
     ascii_a_punto = {}
     punto_a_ascii = {}
     for v in range(1, 256):
@@ -191,18 +212,24 @@ def construir_tabla_ascii(punto_base, coef_a, primo):
             punto_a_ascii[pt] = v
     return ascii_a_punto, punto_a_ascii
 
-# CIFRADO / DESCIFRADO ElGamal ECC
+
+# cifrado / descifrado elgamal ecc
+
 def cifrar_punto_elgamal(punto_mensaje, nonce, punto_base, clave_publica, coef_a, primo):
+    # implementa elgamal sobre ecc, proporciona seguridad ind-cpa
+    # C1 = k*G, S = k*Q, C2 = M + S → sin d no se puede despejar M
     C1 = multiplicar_punto_por_escalar(nonce, punto_base, coef_a, primo)
     S  = multiplicar_punto_por_escalar(nonce, clave_publica, coef_a, primo)
     C2 = sumar_puntos(punto_mensaje, S, coef_a, primo)
     return C1, C2
 
 def descifrar_punto_elgamal(C1, C2, clave_privada, coef_a, primo):
+    # recupera el mensaje usando la clave privada d
+    # S = d*C1 = k*Q, luego M = C2 − S elimina la máscara
     S = multiplicar_punto_por_escalar(clave_privada, C1, coef_a, primo)
     return sumar_puntos(C2, negar_punto(S, primo), coef_a, primo)
 
-# SETUP COMPARTIDO
+
 def _setup():
     disc = (4 * COEF_A**3 + 27 * COEF_B**2) % P
     print(VERDE + f"\nCurva: y^2 = x^3 - x + {COEF_B}  (mod {P})" + RESET)
@@ -217,7 +244,6 @@ def _setup():
     print(VERDE + f"Punto G = {punto_base}  |  orden(G) = {orden}" + RESET)
     return P, COEF_A, COEF_B, punto_base, orden
 
-# CIFRAR
 def flujo_cifrar():
     resultado = _setup()
     if resultado is None:
@@ -252,14 +278,12 @@ def flujo_cifrar():
             continue
         break
 
-    # Mapeo ASCII -> Punto
     print(AMARILLO + "\n Mapeo ASCII -> Punto " + RESET)
     for c in mensaje:
         v = ord(c)
         M = ascii_a_punto[v]
         print(f"  '{c}' ({v}) -> {v}*G = {M}")
 
-    # Cifrado paso a paso
     print(AMARILLO + "\n Cifrado ECC " + RESET)
     bloques = []
     for c in mensaje:
@@ -282,7 +306,6 @@ def flujo_cifrar():
     print(VERDE + f"\nd = {clave_privada}  |  G = {punto_base}  |  p={primo}  a=-1  b={coef_b}" + RESET)
     input("\n> ")
 
-# DESCIFRAR
 def flujo_descifrar():
     resultado = _setup()
     if resultado is None:
@@ -354,7 +377,7 @@ def flujo_descifrar():
         print(AMARILLO + "No se ingresaron bloques." + RESET)
     input("\n> ")
 
-# MAIN
+
 OPCIONES = ["Cifrar mensaje", "Descifrar mensaje", "Salir"]
 
 def main():
