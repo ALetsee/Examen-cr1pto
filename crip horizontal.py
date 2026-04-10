@@ -260,7 +260,7 @@ def flujo_cifrar():
         print(f"  '{c}' ({v}) -> {v}*G = {M}")
 
     # Cifrado paso a paso
-    print(AMARILLO + "\n Cifrado ECC " RESET)
+    print(AMARILLO + "\n Cifrado ECC " + RESET)
     bloques = []
     for c in mensaje:
         nonce = random.randint(2, orden_base - 2)
