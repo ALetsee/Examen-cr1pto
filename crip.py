@@ -48,7 +48,7 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         return 'otro'
 
-# MENU 
+# MENU
 def _limpiar():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -217,7 +217,7 @@ def _setup():
     print(VERDE + f"Punto G = {punto_base}  |  orden(G) = {orden}" + RESET)
     return P, COEF_A, COEF_B, punto_base, orden
 
-#  CIFRAR
+# CIFRAR
 def flujo_cifrar():
     resultado = _setup()
     if resultado is None:
@@ -252,18 +252,37 @@ def flujo_cifrar():
             continue
         break
 
-    print(AMARILLO + "\nBloques cifrados:" + RESET)
+    # Mapeo ASCII -> Punto
+    print(AMARILLO + "\n Mapeo ASCII -> Punto " + RESET)
+    for c in mensaje:
+        v = ord(c)
+        M = ascii_a_punto[v]
+        print(f"  '{c}' ({v}) -> {v}*G = {M}")
+
+    # Cifrado paso a paso
+    print(AMARILLO + "\n Cifrado ECC " RESET)
+    bloques = []
     for c in mensaje:
         nonce = random.randint(2, orden_base - 2)
-        C1, C2 = cifrar_punto_elgamal(
-            ascii_a_punto[ord(c)], nonce, punto_base, clave_publica, coef_a, primo
-        )
+        M = ascii_a_punto[ord(c)]
+        S = multiplicar_punto_por_escalar(nonce, clave_publica, coef_a, primo)
+        C1, C2 = cifrar_punto_elgamal(M, nonce, punto_base, clave_publica, coef_a, primo)
+        bloques.append((c, nonce, M, S, C1, C2))
+        print(f"\n  Caracter : '{c}' (ASCII {ord(c)})")
+        print(f"  Punto M  : {M}  ({ord(c)}*G)")
+        print(f"  Nonce k  : {nonce}")
+        print(f"  C1 = k*G : {C1}")
+        print(f"  S  = k*Q : {S}")
+        print(f"  C2 = M+S : {C2}")
+
+    print(AMARILLO + "\n Resumen bloques cifrados" + RESET)
+    for c, _, _, _, C1, C2 in bloques:
         print(f"  '{c}' -> {C1[0]},{C1[1]},{C2[0]},{C2[1]}")
 
     print(VERDE + f"\nd = {clave_privada}  |  G = {punto_base}  |  p={primo}  a=-1  b={coef_b}" + RESET)
     input("\n> ")
 
-#  DESCIFRAR
+# DESCIFRAR
 def flujo_descifrar():
     resultado = _setup()
     if resultado is None:
@@ -304,7 +323,6 @@ def flujo_descifrar():
             entrada = input(f"Bloque {idx}: ").strip()
         except EOFError:
             break
-
         if not entrada:
             break
 
